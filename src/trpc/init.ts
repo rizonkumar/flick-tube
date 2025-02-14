@@ -5,6 +5,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { cache } from "react";
 import superjson from "superjson";
+import { ratelimit } from "@/lib/ratelimit";
 
 export const createTRPCContext = cache(async () => {
   const { userId } = await auth();
@@ -29,6 +30,7 @@ const t = initTRPC.context<Context>().create({
 export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 export const baseProcedure = t.procedure;
+
 export const protectedProcedure = t.procedure.use(
   async function isAuthed(opts) {
     const { ctx } = opts;
@@ -47,6 +49,15 @@ export const protectedProcedure = t.procedure.use(
 
     if (!user) {
       throw new TRPCError({ code: "UNAUTHORIZED", message: "User not found" });
+    }
+
+    const { success } = await ratelimit.limit(user.id);
+
+    if (!success) {
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: "Too many requests",
+      });
     }
 
     return opts.next({
